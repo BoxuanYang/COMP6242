@@ -5,7 +5,7 @@
 **Quantized KV-cache compression for video generation models**
 
 <p>
-  <a href="#"><img src="https://img.shields.io/badge/Website-76B900?style=for-the-badge&logo=safari&labelColor=555555"></a>
+  <a href="https://svg-project.github.io/qvg/"><img src="https://img.shields.io/badge/Website-76B900?style=for-the-badge&logo=safari&labelColor=555555"></a>
   <a href="https://arxiv.org/abs/2602.02958"><img src="https://img.shields.io/badge/Arxiv-B31B1B?style=for-the-badge&logo=arxiv&labelColor=555555"></a>
   <a href="#"><img src="https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&labelColor=555555"></a>
 </p>
@@ -98,3 +98,17 @@ The table below reports KV-cache memory for the provided scripts. Numbers are in
 | HY-WorldPlay | INT2 | ✓ | 141.18 | 4235.45 | 7.01x |
 
 Across these runs, QuantVideoGen reduces total KV-cache memory by about 85%.
+
+<a id="citation"></a>
+
+## ✏️ Citation
+
+```bibtex
+@article{xi2026quant,
+  title={Quant VideoGen: Auto-Regressive Long Video Generation via 2-Bit KV-Cache Quantization},
+  author={Xi, Haocheng and Yang, Shuo and Zhao, Yilong and Li, Muyang and Cai, Han and Li, Xingyang and Lin, Yujun and Zhang, Zhuoyang and Zhang, Jintao and Li, Xiuyu and others},
+  journal={arXiv preprint arXiv:2602.02958},
+  year={2026}
+}
+```
+
