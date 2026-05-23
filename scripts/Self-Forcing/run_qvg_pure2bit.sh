@@ -17,7 +17,7 @@ kmeans_max_iters=2
 quant_block_size=64
 num_prq_stages=1
 
-mixed_bit_enabled=False
+mixed_bit_enabled=false
 mixed_schedule="static_global"
 mixed_1bit_ratio=0.25
 mixed_low_quant_type="triton-nstages-kmeans-int1"
@@ -41,6 +41,7 @@ DUMP_KV_LEVEL=0 torchrun --nproc_per_node=1 --standalone experiments/Self-Forcin
   --data_path $prompts_path \
   --output_folder $output_folder \
   --num_samples 1 \
+  --seed 0 \
   --num_output_frames $num_output_frames \
   --local_attn_size $local_attn_size \
   --use_ema \
