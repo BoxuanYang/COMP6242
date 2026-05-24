@@ -51,6 +51,7 @@ selfforcing = [
     "regex>=2023.0",
     "ftfy>=6.1",
     "imageio>=2.31",
+    "lpips>=0.1",
     "huggingface-hub>=0.20",
     "requests>=2.31",
     "packaging>=23.0",
