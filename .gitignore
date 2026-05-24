@@ -38,3 +38,10 @@ Thumbs.db
 # Logs
 *.log
 wandb/
+
+# Large run artifacts (videos, archives) — store in Drive instead
+debug/
+h100_run_*.tar.gz
+h100_upload/
+results/
+*.mp4
