@@ -18,6 +18,7 @@ def prq_quant(
     tol: float = 1e-4,
     PACK_OUTPUT_INT8: bool = False,
     CLUSTER_ID_INT8: bool = False,
+    init_centroids_list: list[torch.Tensor] | None = None,
 ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """
     Multi-stage KMeans quantization pipeline.
@@ -41,6 +42,9 @@ def prq_quant(
         tol: Tolerance for KMeans convergence.
         PACK_OUTPUT_INT8: If True, pack quantized output into uint8.
         CLUSTER_ID_INT8: If True, cluster ids are stored as uint8.
+        init_centroids_list: Optional warm-start centroids for each stage.
+            Each stage entry can be shaped as (B, H, K, D) or (B*H, K, D).
+            If shape mismatches, that stage falls back to random init.
     Returns:
         centroids_list: List of n_stages tensors, each of shape (B, H, n_clusters, D),
                         the centroids from each stage.
@@ -59,12 +63,25 @@ def prq_quant(
     
     # Multi-stage KMeans: iteratively cluster and subtract centroids
     for stage in range(n_stages):
+        init_centroids = None
+        if (
+            init_centroids_list is not None
+            and stage < len(init_centroids_list)
+            and init_centroids_list[stage] is not None
+        ):
+            candidate = init_centroids_list[stage]
+            if candidate.ndim == 4:
+                candidate = candidate.reshape(BH, n_clusters, D)
+            if candidate.ndim == 3 and candidate.shape == (BH, n_clusters, D):
+                init_centroids = candidate
+
         # Run KMeans on flattened (B*H, S, D) tensor
         cluster_ids, centroids, cluster_sizes, iters = batch_kmeans_Euclid(
             residual.reshape(BH, S, D),
             n_clusters=n_clusters,
             max_iters=max_iters,
             tol=tol,
+            init_centroids=init_centroids,
         )
         
         # Reshape back to (B, H, ...)

@@ -23,6 +23,8 @@ build/
 # Environment
 .env
 *.env
+.venv
+*.venv
 
 # IDE
 .vscode/

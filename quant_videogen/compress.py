@@ -177,8 +177,20 @@ def get_quantize_type(quant_type: str):
     return quantize_type
 
 
-def compress_kv_cache(k: torch.Tensor, v: torch.Tensor, quant_type: str, quant_config: QuantizeConfig, quantize_fn: callable):
+def compress_kv_cache(
+    k: torch.Tensor,
+    v: torch.Tensor,
+    quant_type: str,
+    quant_config: QuantizeConfig,
+    quantize_fn: callable,
+    centroid_init_data: dict | None = None,
+):
     quantize_type = get_quantize_type(quant_type)
+    k_centroid_init = None
+    v_centroid_init = None
+    if centroid_init_data is not None:
+        k_centroid_init = centroid_init_data.get("k")
+        v_centroid_init = centroid_init_data.get("v")
 
     if quantize_type == QuantizeFunctions.NSTAGE_KMEANS:
         # Apply PRQ (multi-stage K-Means) based quantization
@@ -238,6 +250,7 @@ def compress_kv_cache(k: torch.Tensor, v: torch.Tensor, quant_type: str, quant_c
             block_size=quant_config.quant_block_size,
             max_iters=quant_config.kmeans_max_iters,
             quantize_fn=quantize_fn,
+            init_centroids_list=k_centroid_init,
         )
         v_quant = triton_prq_quantize_tensor(
             v,
@@ -246,6 +259,7 @@ def compress_kv_cache(k: torch.Tensor, v: torch.Tensor, quant_type: str, quant_c
             block_size=quant_config.quant_block_size,
             max_iters=quant_config.kmeans_max_iters,
             quantize_fn=quantize_fn,
+            init_centroids_list=v_centroid_init,
         )
     elif quantize_type == QuantizeFunctions.TRITON_PRQ_CLIP:
         # Apply Triton N-Stage K-Means based quantization
@@ -257,6 +271,7 @@ def compress_kv_cache(k: torch.Tensor, v: torch.Tensor, quant_type: str, quant_c
             max_iters=quant_config.kmeans_max_iters,
             quantize_fn=quantize_fn,
             use_percentile_clipping=True,
+            init_centroids_list=k_centroid_init,
         )
         v_quant = triton_prq_quantize_tensor(
             v,
@@ -266,6 +281,7 @@ def compress_kv_cache(k: torch.Tensor, v: torch.Tensor, quant_type: str, quant_c
             max_iters=quant_config.kmeans_max_iters,
             quantize_fn=quantize_fn,
             use_percentile_clipping=True,
+            init_centroids_list=v_centroid_init,
         )
     elif quantize_type == QuantizeFunctions.NAIVE:
         # ==========================================================

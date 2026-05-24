@@ -268,6 +268,7 @@ def triton_prq_quantize_tensor(
     use_percentile_clipping: bool = False,
     percentile: float = 99.0,
     quantize_fn=None,
+    init_centroids_list: list[torch.Tensor] | None = None,
 ) -> dict:
     """
     Apply Triton-based N-stage K-Means quantization to a tensor.
@@ -325,6 +326,7 @@ def triton_prq_quantize_tensor(
         max_iters=max_iters,
         PACK_OUTPUT_INT8=True,
         CLUSTER_ID_INT8=True,
+        init_centroids_list=init_centroids_list,
     )
 
     if use_percentile_clipping:

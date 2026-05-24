@@ -63,6 +63,8 @@ parser.add_argument("--mixed_schedule", type=str, default="static_global", help=
 parser.add_argument("--mixed_1bit_ratio", type=float, default=0.0, help="Ratio of KV blocks to quantize with 1-bit")
 parser.add_argument("--mixed_low_quant_type", type=str, default="triton-nstages-kmeans-int1", help="Quantization type for the low-bit mixed span")
 parser.add_argument("--mixed_high_quant_type", type=str, default="triton-nstages-kmeans-int2", help="Quantization type for the remaining mixed span")
+parser.add_argument("--quant_factor", type=int, default=1, help="Quantization trigger interval in chunk units (1 = every chunk)")
+parser.add_argument("--centroid_caching_enabled", type=str2bool, default=False, help="Whether to warm-start K-Means centroids from previous quantization span")
 args = parser.parse_args()
 
 # Initialize distributed inference
@@ -102,6 +104,8 @@ config.quant_config = {
     "mixed_1bit_ratio": args.mixed_1bit_ratio,
     "mixed_low_quant_type": args.mixed_low_quant_type,
     "mixed_high_quant_type": args.mixed_high_quant_type,
+    "quant_factor": args.quant_factor,
+    "centroid_caching_enabled": args.centroid_caching_enabled,
 }
 
 # ------------------------------------------------------------------

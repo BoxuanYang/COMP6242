@@ -57,8 +57,25 @@ class CausalInferencePipeline(torch.nn.Module):
         self.quant_config = SimpleNamespace(**args.quant_config)
         self.mixed_final_num_chunks = None
         self.mixed_1bit_boundary_chunk = None
+        self.quant_factor = max(1, int(getattr(self.quant_config, "quant_factor", 1)))
+        self.centroid_caching_enabled = bool(getattr(self.quant_config, "centroid_caching_enabled", False))
+        self._centroid_cache_k = {}
+        self._centroid_cache_v = {}
+
+        cprint(
+            f"Quant trigger interval (quant_factor): {self.quant_factor} | "
+            f"centroid_caching_enabled: {self.centroid_caching_enabled}",
+            "light_cyan",
+        )
 
         self.generator.model.kv_cache_cpu_offload = getattr(self.quant_config, "kv_cache_cpu_offload", False)
+
+    def _reset_centroid_cache(self):
+        self._centroid_cache_k.clear()
+        self._centroid_cache_v.clear()
+
+    def _get_centroid_cache_key(self, layer_idx: int, quant_type: str):
+        return (layer_idx, quant_type)
 
 
     def quantize_kv_cache(self, tokens_to_quantize_start: int, tokens_to_quantize_end: int, max_tokens_to_quantize: int):
@@ -153,16 +170,16 @@ class CausalInferencePipeline(torch.nn.Module):
         spans = []
         boundary_index = self.mixed_1bit_boundary_chunk * self.frame_seq_length
         if start_index < boundary_index:
-            one_bit_end = min(end_index, boundary_index)
+            low_bit_end = min(end_index, boundary_index)
             spans.append((
                 start_index,
-                one_bit_end,
+                low_bit_end,
                 self._make_span_quant_config(low_quant_type),
             ))
         if boundary_index < end_index:
-            two_bit_start = max(start_index, boundary_index)
+            high_bit_start = max(start_index, boundary_index)
             spans.append((
-                two_bit_start,
+                high_bit_start,
                 end_index,
                 self._make_span_quant_config(high_quant_type),
             ))
@@ -173,7 +190,7 @@ class CausalInferencePipeline(torch.nn.Module):
         )
         cprint(
             f"Mixed-bit KV spans: {span_desc} "
-            f"(schedule={schedule}, 1-bit ratio target={ratio:.2f}, "
+            f"(schedule={schedule}, low-bit ratio target={ratio:.2f}, "
             f"boundary chunk={self.mixed_1bit_boundary_chunk}/"
             f"{self.mixed_final_num_chunks})",
             "light_cyan",
@@ -202,9 +219,9 @@ class CausalInferencePipeline(torch.nn.Module):
         cprint(
             "Mixed-bit schedule: static_global | "
             f"Final chunks: {self.mixed_final_num_chunks} | "
-            f"1-bit boundary chunk: {self.mixed_1bit_boundary_chunk} | "
-            f"1-bit range: [0, {self.mixed_1bit_boundary_chunk}) | "
-            f"2-bit range: [{self.mixed_1bit_boundary_chunk}, {self.mixed_final_num_chunks})",
+            f"Low-bit boundary chunk: {self.mixed_1bit_boundary_chunk} | "
+            f"Low-bit range: [0, {self.mixed_1bit_boundary_chunk}) | "
+            f"High-bit range: [{self.mixed_1bit_boundary_chunk}, {self.mixed_final_num_chunks})",
             "light_cyan",
         )
 
@@ -234,9 +251,29 @@ class CausalInferencePipeline(torch.nn.Module):
         k = k.permute(0, 2, 1, 3).contiguous()
         v = v.permute(0, 2, 1, 3).contiguous()
 
+        centroid_init_data = None
+        if self.centroid_caching_enabled:
+            cache_key = self._get_centroid_cache_key(layer_idx, quant_config.quant_type)
+            centroid_init_data = {
+                "k": self._centroid_cache_k.get(cache_key),
+                "v": self._centroid_cache_v.get(cache_key),
+            }
+
         k_quant, v_quant = compress_kv_cache(
-            k, v, quant_config.quant_type, quant_config, quantize_fn
+            k,
+            v,
+            quant_config.quant_type,
+            quant_config,
+            quantize_fn,
+            centroid_init_data=centroid_init_data,
         )
+
+        if self.centroid_caching_enabled:
+            cache_key = self._get_centroid_cache_key(layer_idx, quant_config.quant_type)
+            if isinstance(k_quant, dict) and "centroids_list" in k_quant:
+                self._centroid_cache_k[cache_key] = k_quant["centroids_list"]
+            if isinstance(v_quant, dict) and "centroids_list" in v_quant:
+                self._centroid_cache_v[cache_key] = v_quant["centroids_list"]
 
         self._print_kv_cache_mse_error(k, k_quant, v, v_quant, layer_idx)
 
@@ -329,6 +366,7 @@ class CausalInferencePipeline(torch.nn.Module):
                 It is normalized to be in the range [0, 1].
         """
         batch_size, num_frames, num_channels, height, width = noise.shape
+        self._reset_centroid_cache()
         if not self.independent_first_frame or (self.independent_first_frame and initial_latent is not None):
             # If the first frame is independent and the first frame is provided, then the number of frames in the
             # noise should still be a multiple of num_frame_per_block
@@ -457,7 +495,7 @@ class CausalInferencePipeline(torch.nn.Module):
             #########################################################
             # When generating the first 8 chunks, we do not quantize them.
 
-            QUANT_FACTOR = 8
+            QUANT_FACTOR = self.quant_factor
             if chunk_index < QUANT_FACTOR or chunk_index % QUANT_FACTOR != 0:
                 pass
             else:
