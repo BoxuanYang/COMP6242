@@ -10,6 +10,7 @@ checkpoints/
 # Results & outputs
 results/
 outputs/
+logs/
 
 # Python
 __pycache__/

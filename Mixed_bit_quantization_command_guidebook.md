@@ -91,7 +91,7 @@ QUANT_FACTOR=1 \
 CENTROID_CACHING_ENABLED=true \
 NUM_OUTPUT_FRAMES=180 \
 LOCAL_ATTN_SIZE=180 \
-bash scripts/Self-Forcing/run_qvg.sh
+uv run bash scripts/Self-Forcing/run_qvg.sh
 ```
 
 如果你想修改“默认值”而不是每次传环境变量，就编辑：
@@ -195,8 +195,8 @@ MIXED_RATIO=0.25 \
 MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int4 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int2 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=false \
-bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r025.log
+CENTROID_CACHING_ENABLED=true \
+uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r025.log
 ```
 
 输出目录：
@@ -212,8 +212,8 @@ MIXED_RATIO=0.50 \
 MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int4 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int2 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=false \
-bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r050.log
+CENTROID_CACHING_ENABLED=true \
+uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r050.log
 ```
 
 输出目录：
@@ -229,8 +229,8 @@ MIXED_RATIO=0.25 \
 MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int2 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int1 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=false \
-bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r025.log
+CENTROID_CACHING_ENABLED=true \
+uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r025.log
 ```
 
 输出目录：
@@ -246,8 +246,8 @@ MIXED_RATIO=0.50 \
 MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int2 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int1 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=false \
-bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r050.log
+CENTROID_CACHING_ENABLED=true \
+uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r050.log
 ```
 
 输出目录：
@@ -271,7 +271,7 @@ scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```bash
 PRED_FOLDER=results/selfforcing/mixed_static_global_lowint4_0.25_highint2_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
-bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
+uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
 ### 4.2 评测 4bit-2bit, ratio=0.50
@@ -279,7 +279,7 @@ bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```bash
 PRED_FOLDER=results/selfforcing/mixed_static_global_lowint4_0.50_highint2_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
-bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
+uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
 ### 4.3 评测 2bit-1bit, ratio=0.25
@@ -287,7 +287,7 @@ bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```bash
 PRED_FOLDER=results/selfforcing/mixed_static_global_lowint2_0.25_highint1_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
-bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
+uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
 ### 4.4 评测 2bit-1bit, ratio=0.50
@@ -295,7 +295,7 @@ bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```bash
 PRED_FOLDER=results/selfforcing/mixed_static_global_lowint2_0.50_highint1_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
-bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
+uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
 每个 PRED_FOLDER 下会新增两份指标文件：
