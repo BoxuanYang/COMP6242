@@ -180,7 +180,7 @@ results/selfforcing/bf16
 
 ---
 
-## 3) 跑 4 组 mixed-bit 生成
+## 3) 跑 3 组 mixed-bit 生成
 
 说明：
 
@@ -188,72 +188,50 @@ results/selfforcing/bf16
 - quant factor 固定为 1：`QUANT_FACTOR=1`
 - centroid caching 可开关：`CENTROID_CACHING_ENABLED=true/false`
 
-### 3.1 4bit-2bit, ratio=0.25
+
+### 3.1 pure 2bit quantization baseline;
+
+```bash
+MIXED_BIT_ENABLED=false \
+QUANT_TYPE=triton-nstages-kmeans-int2 \
+time uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_qvg_int2.log
+```
+
+
+### 3.2 1bit-2bit, ratio=0.25
 
 ```bash
 MIXED_RATIO=0.25 \
-MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int4 \
+MIXED_BIT_ENABLED=true \
+MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int1 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int2 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=true \
-uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r025.log
+CENTROID_CACHING_ENABLED=false \
+time uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low1_high2_r025.log
 ```
 
 输出目录：
 
 ```text
-results/selfforcing/mixed_static_global_lowint4_0.25_highint2_64/kc_256_vc_256_nstages_1
+results/selfforcing/mixed_static_global_lowint1_highint2_r0.25_64/kc_256_vc_256_nstages_1
 ```
 
-### 3.2 4bit-2bit, ratio=0.50
+### 3.3 1bit-2bit, ratio=0.50
 
 ```bash
 MIXED_RATIO=0.50 \
-MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int4 \
+MIXED_BIT_ENABLED=true \
+MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int1 \
 MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int2 \
 QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=true \
-uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low4_high2_r050.log
+CENTROID_CACHING_ENABLED=false \
+time uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low1_high2_r050.log
 ```
 
 输出目录：
 
 ```text
-results/selfforcing/mixed_static_global_lowint4_0.50_highint2_64/kc_256_vc_256_nstages_1
-```
-
-### 3.3 2bit-1bit, ratio=0.25
-
-```bash
-MIXED_RATIO=0.25 \
-MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int2 \
-MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int1 \
-QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=true \
-uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r025.log
-```
-
-输出目录：
-
-```text
-results/selfforcing/mixed_static_global_lowint2_0.25_highint1_64/kc_256_vc_256_nstages_1
-```
-
-### 3.4 2bit-1bit, ratio=0.50
-
-```bash
-MIXED_RATIO=0.50 \
-MIXED_LOW_QUANT_TYPE=triton-nstages-kmeans-int2 \
-MIXED_HIGH_QUANT_TYPE=triton-nstages-kmeans-int1 \
-QUANT_FACTOR=1 \
-CENTROID_CACHING_ENABLED=true \
-uv run bash scripts/Self-Forcing/run_qvg.sh 2>&1 | tee logs/self_forcing_mixed_low2_high1_r050.log
-```
-
-输出目录：
-
-```text
-results/selfforcing/mixed_static_global_lowint2_0.50_highint1_64/kc_256_vc_256_nstages_1
+results/selfforcing/mixed_static_global_lowint1_highint2_r0.50_64/kc_256_vc_256_nstages_1
 ```
 
 ---
@@ -288,34 +266,19 @@ python experiments/Self-Forcing/eval_psnr_ssim_lpips.py \
   --device cpu
 ```
 
-### 4.1 评测 4bit-2bit, ratio=0.25
+
+### 4.1 评测 1bit-2bit, ratio=0.25
 
 ```bash
-PRED_FOLDER=results/selfforcing/mixed_static_global_lowint4_0.25_highint2_64/kc_256_vc_256_nstages_1 \
+PRED_FOLDER=results/selfforcing/mixed_static_global_lowint1_highint2_r0.25_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
 uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
-### 4.2 评测 4bit-2bit, ratio=0.50
+### 4.2 评测 1bit-2bit, ratio=0.50
 
 ```bash
-PRED_FOLDER=results/selfforcing/mixed_static_global_lowint4_0.50_highint2_64/kc_256_vc_256_nstages_1 \
-REF_FOLDER=results/selfforcing/bf16 \
-uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
-```
-
-### 4.3 评测 2bit-1bit, ratio=0.25
-
-```bash
-PRED_FOLDER=results/selfforcing/mixed_static_global_lowint2_0.25_highint1_64/kc_256_vc_256_nstages_1 \
-REF_FOLDER=results/selfforcing/bf16 \
-uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
-```
-
-### 4.4 评测 2bit-1bit, ratio=0.50
-
-```bash
-PRED_FOLDER=results/selfforcing/mixed_static_global_lowint2_0.50_highint1_64/kc_256_vc_256_nstages_1 \
+PRED_FOLDER=results/selfforcing/mixed_static_global_lowint1_highint2_r0.50_64/kc_256_vc_256_nstages_1 \
 REF_FOLDER=results/selfforcing/bf16 \
 uv run bash scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
@@ -343,14 +306,12 @@ find results/selfforcing -maxdepth 6 -name "*.mp4"
 grep -E "Mixed-bit schedule|Mixed-bit KV spans|Peak Memory Usage|Per Layer Memory Usage|Quantization KV Cache Time|quant_factor|centroid_caching_enabled" logs/self_forcing_mixed_*.log
 ```
 
-### 5.3 汇总 4 组指标
+### 5.3 汇总 2 组指标
 
 ```bash
 for f in \
-	results/selfforcing/mixed_static_global_lowint4_0.25_highint2_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json \
-	results/selfforcing/mixed_static_global_lowint4_0.50_highint2_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json \
-	results/selfforcing/mixed_static_global_lowint2_0.25_highint1_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json \
-	results/selfforcing/mixed_static_global_lowint2_0.50_highint1_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json
+	results/selfforcing/mixed_static_global_lowint1_highint2_r0.25_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json \
+	results/selfforcing/mixed_static_global_lowint1_highint2_r0.50_64/kc_256_vc_256_nstages_1/metrics_psnr_ssim_lpips_summary.json
 do
 	echo "==== $f"
 	cat "$f"
