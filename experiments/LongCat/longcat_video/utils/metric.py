@@ -15,7 +15,8 @@ from torch.nn.functional import mse_loss
 from torchvision import transforms
 from tqdm import trange
 
-lpips_model = lpips.LPIPS(net="vgg").cuda()
+_default_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+lpips_model = lpips.LPIPS(net="vgg").to(_default_device).eval()
 
 
 def retrieve_latents(

@@ -1,83 +1,67 @@
 import argparse
+import importlib.util
 import json
-import os
 from pathlib import Path
 
-import imageio
 import lpips
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
 
-def load_video_rgb_tensor(video_path: Path) -> torch.Tensor:
-    """Load an mp4 as float tensor in [0, 1] with shape [T, C, H, W]."""
-    reader = imageio.get_reader(str(video_path))
-    frames = []
-    for frame in reader:
-        # frame: [H, W, C], uint8
-        t = torch.from_numpy(frame).float().permute(2, 0, 1) / 255.0
-        frames.append(t)
-    reader.close()
+def load_longcat_metric_impl():
+    """Load the original LongCat metric implementation used by the upstream repo."""
+    metric_path = Path(__file__).resolve().parents[1] / "LongCat" / "longcat_video" / "utils" / "metric.py"
+    if not metric_path.exists():
+        raise FileNotFoundError(f"LongCat metric implementation not found: {metric_path}")
 
-    if not frames:
-        raise ValueError(f"No frames found in {video_path}")
+    spec = importlib.util.spec_from_file_location("longcat_metric_impl", str(metric_path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load module spec from: {metric_path}")
+    longcat_metric = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(longcat_metric)
 
-    return torch.stack(frames, dim=0)
-
-
-def calculate_ssim(frame_a: torch.Tensor, frame_b: torch.Tensor) -> torch.Tensor:
-    """Compute SSIM for a single frame pair, inputs in [0, 1], shape [1, C, H, W]."""
-    c1 = 0.01 ** 2
-    c2 = 0.03 ** 2
-
-    mu1 = F.avg_pool2d(frame_a, kernel_size=11, stride=1, padding=5)
-    mu2 = F.avg_pool2d(frame_b, kernel_size=11, stride=1, padding=5)
-
-    sigma1_sq = F.avg_pool2d(frame_a * frame_a, kernel_size=11, stride=1, padding=5) - mu1 ** 2
-    sigma2_sq = F.avg_pool2d(frame_b * frame_b, kernel_size=11, stride=1, padding=5) - mu2 ** 2
-    sigma12 = F.avg_pool2d(frame_a * frame_b, kernel_size=11, stride=1, padding=5) - mu1 * mu2
-
-    ssim_map = ((2 * mu1 * mu2 + c1) * (2 * sigma12 + c2)) / (
-        (mu1 ** 2 + mu2 ** 2 + c1) * (sigma1_sq + sigma2_sq + c2)
-    )
-    return ssim_map.mean()
+    return longcat_metric
 
 
-def compute_video_metrics(pred: torch.Tensor, ref: torch.Tensor, lpips_model, device: torch.device, skip_frames: int = 0) -> dict:
-    """Compute average PSNR/SSIM/LPIPS over aligned frames."""
-    if pred.ndim != 4 or ref.ndim != 4:
-        raise ValueError(f"Expected 4D tensors [T, C, H, W], got {pred.shape} and {ref.shape}")
+def resolve_device(device_arg: str) -> torch.device:
+    """Resolve requested device and fall back safely when CUDA is unavailable."""
+    device_arg = device_arg.lower().strip()
+    if device_arg not in {"cpu", "cuda"}:
+        raise ValueError(f"Unsupported --device value: {device_arg}. Use 'cpu' or 'cuda'.")
+    if device_arg == "cuda" and not torch.cuda.is_available():
+        print("WARNING: --device=cuda requested but CUDA is unavailable. Falling back to CPU.")
+        return torch.device("cpu")
+    return torch.device(device_arg)
 
-    total_frames = min(pred.shape[0], ref.shape[0])
-    if total_frames <= skip_frames:
-        raise ValueError(f"Not enough frames after skip_frames={skip_frames}, total={total_frames}")
 
-    pred = pred[:total_frames]
-    ref = ref[:total_frames]
-    pred = pred[skip_frames:]
-    ref = ref[skip_frames:]
+def compute_psnr_ssim_lpips(video1_tensor, video2_tensor, longcat_metric, video_label: str):
+    """Compute only PSNR/SSIM/LPIPS with LongCat-compatible frame semantics."""
+    if video1_tensor.shape != video2_tensor.shape:
+        raise ValueError(f"Videos must have the same shape. {video1_tensor.shape} != {video2_tensor.shape}")
+
+    num_frames = int(video1_tensor.shape[0])
+    if num_frames <= 1:
+        raise ValueError(f"Not enough frames for metric computation: {num_frames}")
 
     psnr_values = []
     ssim_values = []
     lpips_values = []
 
-    for i in range(pred.shape[0]):
-        frame_pred = pred[i].unsqueeze(0).to(device)
-        frame_ref = ref[i].unsqueeze(0).to(device)
+    with torch.no_grad():
+        # Keep the original LongCat convention: start from frame index 1.
+        for i in tqdm(range(1, num_frames), desc=f"frames[{video_label}]", leave=False):
+            frame1 = video1_tensor[i].unsqueeze(0)
+            frame2 = video2_tensor[i].unsqueeze(0)
 
-        mse = F.mse_loss(frame_pred, frame_ref, reduction="mean")
-        psnr = 10.0 * torch.log10(1.0 / torch.clamp(mse, min=1e-12))
-        ssim = calculate_ssim(frame_pred, frame_ref)
+            mse = F.mse_loss(frame1, frame2, reduction="mean")
+            psnr = 10.0 * torch.log10(1.0 / torch.clamp(mse, min=1e-12))
+            ssim = longcat_metric.calculate_ssim(frame1, frame2)
+            lpips_value = longcat_metric.lpips_model(frame1, frame2)
 
-        # LPIPS expects normalized inputs in [-1, 1].
-        lpips_pred = frame_pred * 2.0 - 1.0
-        lpips_ref = frame_ref * 2.0 - 1.0
-        lpips_val = lpips_model(lpips_pred, lpips_ref)
-
-        psnr_values.append(psnr.item())
-        ssim_values.append(ssim.item())
-        lpips_values.append(lpips_val.item())
+            psnr_values.append(psnr.item())
+            ssim_values.append(ssim.item())
+            lpips_values.append(lpips_value.item())
 
     return {
         "num_eval_frames": len(psnr_values),
@@ -120,8 +104,10 @@ def main():
     if not ref_dir.exists() or not ref_dir.is_dir():
         raise FileNotFoundError(f"ref_folder not found: {ref_dir}")
 
-    device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
-    lpips_model = lpips.LPIPS(net="vgg").to(device).eval()
+    device = resolve_device(args.device)
+
+    longcat_metric = load_longcat_metric_impl()
+    longcat_metric.lpips_model = lpips.LPIPS(net="vgg").to(device).eval()
 
     pred_files = sorted(pred_dir.glob("*.mp4"))
     if not pred_files:
@@ -138,20 +124,37 @@ def main():
             })
             continue
 
-        pred_video = load_video_rgb_tensor(pred_path)
-        ref_video = load_video_rgb_tensor(ref_path)
+        try:
+            pred_video = longcat_metric.load_video(str(pred_path)).to(device)
+            ref_video = longcat_metric.load_video(str(ref_path)).to(device)
 
-        metrics = compute_video_metrics(
-            pred=pred_video,
-            ref=ref_video,
-            lpips_model=lpips_model,
-            device=device,
-            skip_frames=args.skip_frames,
-        )
+            if args.skip_frames > 0:
+                pred_video = pred_video[args.skip_frames:]
+                ref_video = ref_video[args.skip_frames:]
+
+            metrics = compute_psnr_ssim_lpips(
+                video1_tensor=pred_video,
+                video2_tensor=ref_video,
+                longcat_metric=longcat_metric,
+                video_label=pred_path.name,
+            )
+        except Exception as exc:
+            rows.append(
+                {
+                    "file": pred_path.name,
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
+            continue
+
         row = {
             "file": pred_path.name,
             "status": "ok",
-            **metrics,
+            "num_eval_frames": int(metrics["num_eval_frames"]),
+            "PSNR": float(metrics["PSNR"]),
+            "SSIM": float(metrics["SSIM"]),
+            "LPIPS": float(metrics["LPIPS"]),
         }
         rows.append(row)
 

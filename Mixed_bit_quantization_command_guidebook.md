@@ -266,6 +266,28 @@ results/selfforcing/mixed_static_global_lowint2_0.50_highint1_64/kc_256_vc_256_n
 scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh
 ```
 
+或者直接单条：
+
+```text
+python experiments/Self-Forcing/eval_psnr_ssim_lpips.py \
+  --pred_folder <pred_dir> \
+  --ref_folder <ref_dir> \
+  --output_json <out.json> \
+  --output_jsonl <out.jsonl> \
+  --device cpu
+```
+
+e.g.,
+
+```text
+python experiments/Self-Forcing/eval_psnr_ssim_lpips.py \
+  --pred_folder results/qvg-2bit \
+  --ref_folder results/bf16 \
+  --output_json results/qvg-2bit/metrics_summary.json \
+  --output_jsonl results/qvg-2bit/metrics_per_video.jsonl \
+  --device cpu
+```
+
 ### 4.1 评测 4bit-2bit, ratio=0.25
 
 ```bash
