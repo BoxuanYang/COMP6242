@@ -236,7 +236,7 @@ results/selfforcing/mixed_static_global_lowint1_highint2_r0.50_64/kc_256_vc_256_
 
 ---
 
-## 4) 每组对 BF16 评测 PSNR / SSIM / LPIPS
+## 4) 每组对 BF16 评测 PSNR / SSIM / LPIPS; 
 
 评测脚本：
 
@@ -292,21 +292,37 @@ metrics_psnr_ssim_lpips_per_video.jsonl
 
 ---
 
-## 5) 快速检查结果是否齐全
+## 5) 抓显存 / KV cache 大小（grep 出来填进 report 表格里）
 
-### 5.1 查看所有视频
+```bash
+grep -E "Total KV Cache|Per Layer|Peak Memory" .log/self_forcing_qvg_int2.log | tail -n 1
+```
+
+每条 log 行长这样：
+
+```
+Peak Memory Usage: ... | Per Layer Memory Usage: ... | Total KV Cache Memory Usage: ...
+```
+
+分别对应：显存峰值、每层 KV、总 KV cache 大小。
+
+---
+
+## 6) 快速检查结果是否齐全
+
+### 6.1 查看所有视频
 
 ```bash
 find results/selfforcing -maxdepth 6 -name "*.mp4"
 ```
 
-### 5.2 查看 mixed 分界与显存日志
+### 6.2 查看 mixed 分界与显存日志
 
 ```bash
 grep -E "Mixed-bit schedule|Mixed-bit KV spans|Peak Memory Usage|Per Layer Memory Usage|Quantization KV Cache Time|quant_factor|centroid_caching_enabled" logs/self_forcing_mixed_*.log
 ```
 
-### 5.3 汇总 2 组指标
+### 6.3 汇总 2 组指标
 
 ```bash
 for f in \
@@ -320,7 +336,7 @@ done
 
 ---
 
-## 6) 可选：打开 centroid caching 再跑一轮
+## 7) 可选：打开 centroid caching 再跑一轮
 
 如果要做 ablation（开/关 centroid caching），只需把命令里的：
 

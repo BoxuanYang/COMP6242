@@ -72,7 +72,7 @@ DUMP_KV_LEVEL="$dump_kv_level" torchrun --nproc_per_node=1 --standalone experime
   --data_path $prompts_path \
   --output_folder $output_folder \
   --num_samples 1 \
-  --seed 0 \   # default 
+  --seed 0 \
   --num_output_frames $num_output_frames \
   --local_attn_size $local_attn_size \
   --use_ema \
