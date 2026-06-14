@@ -1,139 +1,107 @@
-## Recent Changes: Self-Forcing Mixed-bit KV Cache Quantization
+# Quant-VideoGen: Mixed-Bit KV Cache Extension
 
-This version adds configurable mixed-bit KV cache quantization to the Self-Forcing experiment path. The goal is to compare the original all-2-bit QVG baseline against a mixed setting where a fixed portion of KV cache frame chunks is quantized with 1-bit and the remaining chunks are quantized with 2-bit.
+This repository is our group-project extension of the released QuantVideoGen (QVG) codebase. The original QVG pipeline applies uniform 2-bit KV-cache quantization during inference. Our work studies a narrower question: can a simple temporal mixed-bit policy improve the memory/quality trade-off by using lower precision for older KV-cache chunks and higher precision for newer ones?
 
-Main changes:
+The current extension is implemented for the Self-Forcing integration only. We keep the original model weights and training setup unchanged; all of our changes happen at inference time in the KV-cache compression, cache storage, experiment control, and evaluation pipeline.
 
-- Added the Triton PRQ `int1` quantization type: `triton-nstages-kmeans-int1`.
-- Implemented 1-bit residual pack / unpack / dequantization support.
-- Added mixed-bit configuration to `scripts/Self-Forcing/run_qvg.sh`:
-  - `mixed_bit_enabled`
-  - `mixed_schedule`
-  - `mixed_1bit_ratio`
-  - `mixed_low_quant_type`
-  - `mixed_high_quant_type`
-- The default schedule is `static_global`: the global 1-bit / 2-bit boundary is computed once before inference from the fixed video length and `mixed_1bit_ratio`.
-- During Self-Forcing inference, each KV cache span is checked against the global boundary before compression:
-  - spans before the boundary use `triton-nstages-kmeans-int1`
-  - spans after the boundary use `triton-nstages-kmeans-int2`
-  - spans crossing the boundary are split into separate 1-bit and 2-bit spans
-- Each quantized KV span stores its own `quant_config`, so cache reads can dequantize mixed int1/int2 spans with the correct bit width.
+## Project Focus
 
-The current mixed-bit scheduling implementation is wired into the Self-Forcing path only. LongCat and HY-WorldPlay have not been connected to the mixed-bit scheduler yet. With the default script values `num_output_frames=180` and `mixed_1bit_ratio=0.25`, the first 45 frame chunks use 1-bit quantization and the remaining 135 frame chunks use 2-bit quantization.
+We compare four settings on Self-Forcing:
 
----------------
+- `BF16`: no KV-cache quantization.
+- `QVG INT2`: the original uniform 2-bit QuantVideoGen baseline.
+- `Mixed-25`: the oldest 25% of frame chunks use INT1, and the remaining 75% use INT2.
+- `Mixed-50`: the oldest 50% of frame chunks use INT1, and the remaining 50% use INT2.
 
-<div align="center">
+Our default mixed-bit policy is `static_global`. Before inference starts, we compute one global chunk boundary as `floor(final_num_chunks * mixed_1bit_ratio)`. During KV-cache compression, chunks before that boundary are quantized with the low-bit type, while chunks after the boundary use the high-bit type. If one quantization range crosses the boundary, it is split into two sub-spans and each sub-span is compressed with its own quantization config.
 
-# QuantVideoGen
+## What We Added Beyond Original QVG
 
-**Quantized KV-cache compression for video generation models**
+### 1. Temporal mixed-bit scheduling for Self-Forcing
 
-<p>
-  <a href="https://svg-project.github.io/qvg/"><img src="https://img.shields.io/badge/Website-76B900?style=for-the-badge&logo=safari&labelColor=555555"></a>
-  <a href="https://arxiv.org/abs/2602.02958"><img src="https://img.shields.io/badge/Arxiv-B31B1B?style=for-the-badge&logo=arxiv&labelColor=555555"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&labelColor=555555"></a>
-</p>
+Original QVG uses one quantization type for the whole KV cache. We added a scheduler that lets different temporal regions use different bit-widths.
 
-</div>
+- `experiments/Self-Forcing/inference.py` parses mixed-bit arguments and injects them into `config.quant_config`.
+- `experiments/Self-Forcing/pipeline/causal_inference.py` computes the global boundary with `_configure_mixed_bit_schedule()`.
+- `_get_quantization_spans()` turns one token range into one or two frame-aligned spans, each with its own `quant_config`.
+- `_quantize_kv_cache_span()` compresses every span independently, so one inference run can contain both INT1 and INT2 cache segments.
 
-QuantVideoGen is a lightweight KV-cache quantization toolkit for autoregressive video generation. It compresses long-horizon attention cache during inference, with experiment integrations for LongCat-Video, Self-Forcing, and HY-WorldPlay.
+### 2. A new Triton PRQ `int1` quantization path
 
-## ✨ Highlights
+The original release already supports low-bit PRQ variants such as INT2 and INT4. To make INT1/INT2 mixed-bit experiments possible, we extended the quantization backend with 1-bit support.
 
-- Quantizes KV cache with Triton k-means / staged product quantization kernels.
-- Keeps the original model weights unchanged; quantization is applied to inference cache.
-- Includes bf16 and quantized launch scripts for three long-video / streaming generation repos.
-- Targets memory-heavy long-context settings where KV cache dominates peak usage.
+- `quant_videogen/compress.py` adds `triton-nstages-kmeans-int1` to the quantization dispatch logic.
+- `quant_videogen/functions.py` and `quant_videogen/real/prq.py` allow PRQ residual quantization with `num_bits=1`.
+- `quant_videogen/real/quant_pack.py` implements sign-only 1-bit residual packing with blockwise mean-absolute scaling. For INT1, each residual value is reduced to its sign and eight values are packed into one byte.
+- `quant_videogen/real/accumulate.py` adds the matching unpack-and-dequantize path so INT1 payloads can be reconstructed during attention reads.
 
-<a id="installation"></a>
+### 3. Mixed-span KV-cache storage and correct per-span dequantization
 
-## 📦 Installation
+Mixed-bit scheduling only works if the cache can remember which part was compressed with which bit-width. We therefore extended the chunked cache format to store quantized spans together with their own metadata.
 
-```bash
-conda create -n qvg python=3.12.9 -y
-conda activate qvg
+- `quant_videogen/kv_cache.py` allows a cache to contain multiple quantized spans, not just one uniform quantized representation.
+- Every real-quantized span stores `info.quant_config` and `info.output_dtype`.
+- `quant_videogen/uncompress.py` extracts the `quant_type` and bit-width from the stored span metadata, then dispatches the correct dequantization path for that span.
 
-pip install uv
+This is what makes INT1 and INT2 segments coexist safely in the same KV cache.
 
-# Everything, recommended for reproducing all experiments.
-uv pip install -e ".[all]"
+### 4. Experiment controls for reproducible sweeps
 
-# Or install only one experiment extra.
-uv pip install -e ".[longcat]"
-uv pip install -e ".[selfforcing]"
-uv pip install -e ".[hyworldplay]"
+We added a more explicit experiment interface around the Self-Forcing QVG script so mixed-bit runs can be reproduced without editing Python code.
 
-# Flash Attention, CUDA 12 / torch 2.8 wheel.
-uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
-```
+- `scripts/Self-Forcing/run_qvg.sh` now exposes:
+  - `MIXED_BIT_ENABLED`
+  - `MIXED_SCHEDULE`
+  - `MIXED_1BIT_RATIO` / `MIXED_RATIO`
+  - `MIXED_LOW_QUANT_TYPE`
+  - `MIXED_HIGH_QUANT_TYPE`
+  - `QUANT_FACTOR`
+  - `CENTROID_CACHING_ENABLED`
+- Output folders are named from the active quantization settings, which makes baseline and mixed-bit runs easier to compare.
+- `QUANT_FACTOR` controls how often KV quantization is triggered in chunk units.
 
-<a id="download-models"></a>
+### 5. Optional centroid warm-start for repeated quantization
 
-## ⬇️ Download Models
+Repeated PRQ over many KV spans can rerun K-Means many times. We added an optional engineering optimization that reuses centroids from the previous span of the same layer and quantization type.
 
-Download model checkpoints before running experiments.
+- `experiments/Self-Forcing/pipeline/causal_inference.py` keeps centroid caches keyed by `(layer_idx, quant_type)`.
+- `quant_videogen/compress.py` forwards optional centroid initialization data.
+- `quant_videogen/real/prq.py` accepts `init_centroids_list` and warm-starts K-Means stage by stage when shapes match.
 
-```bash
-# LongCat-Video
-hf download meituan-longcat/LongCat-Video --local-dir ckpts/LongCat-Video
+This does not change the model architecture; it is an inference-time acceleration and stabilization option for experiment sweeps.
 
-# Self-Forcing
-bash scripts/Self-Forcing/download_models.sh
+### 6. Evaluation scripts for video-quality comparison
 
-# HY-WorldPlay
-bash scripts/HY-WorldPlay/download_models.sh
-```
+The guidebook is not only about generation commands; we also added evaluation tooling so the mixed-bit policy can be measured against BF16 references.
 
-<a id="quick-start"></a>
+- `scripts/Self-Forcing/run_metrics_psnr_ssim_lpips.sh` is a wrapper for evaluation runs.
+- `experiments/Self-Forcing/eval_psnr_ssim_lpips.py` computes PSNR, SSIM, and LPIPS between predicted videos and BF16 outputs.
+- The metric script reuses the upstream LongCat metric implementation so frame handling stays consistent with the QVG codebase.
 
-## 💥 Quick Start
+## Scope and Limitations
 
-Each integration provides a bf16 baseline script and a quantized script. The quantized scripts currently use `triton-nstages-kmeans-int2` with block size 64 and 256 K/V centroids by default.
+- The mixed-bit scheduler is currently connected only to the Self-Forcing path.
+- The implemented policy is `static_global`; it is a fixed temporal split, not a learned or adaptive bit-allocation strategy.
+- We do not retrain the model or modify model weights. This is an inference-time KV-cache extension on top of QVG.
 
-```bash
-# LongCat-Video
-bash scripts/LongCat/run_bf16.sh
-bash scripts/LongCat/run_qvg.sh
+## Running the Experiments
 
-# Self-Forcing
-bash scripts/Self-Forcing/run_bf16.sh
-bash scripts/Self-Forcing/run_qvg.sh
+For the full command guide, see `Mixed_bit_quantization_command_guidebook.md`.
 
-# HY-WorldPlay
-bash scripts/HY-WorldPlay/run_bf16.sh
-bash scripts/HY-WorldPlay/run_qvg.sh
-```
+That guidebook covers:
 
-Outputs are written under `results/`. Quantization options can be changed directly in the corresponding `run_qvg.sh` script.
+- environment and model setup for Self-Forcing
+- BF16 baseline generation
+- uniform INT2 QVG baseline generation
+- mixed INT1/INT2 generation with different ratios
+- PSNR / SSIM / LPIPS evaluation against BF16 outputs
 
-<a id="memory-results"></a>
+## Upstream Base
 
-## 📊 Memory Results
+This project inherits from the released QuantVideoGen codebase:
 
-The table below reports KV-cache memory for the provided scripts. Numbers are in MB.
+- Repository: https://github.com/svg-project/Quant-VideoGen
+- Project page: https://svg-project.github.io/qvg/
+- Paper: https://arxiv.org/abs/2602.02958
 
-| Model | Precision | QVG | Per Layer KV | Total KV Cache | Compression Rate |
-| --- | ---: | :---: | ---: | ---: | ---: |
-| LongCat-Video | BF16 | ✗ | 464.00 | 22272.00 | 1.00x |
-| LongCat-Video | INT2 | ✓ | 67.32 | 3231.28 | 6.89x |
-| Self-Forcing | BF16 | ✗ | 1535.76 | 46072.88 | 1.00x |
-| Self-Forcing | INT2 | ✓ | 220.45 | 6613.59 | 6.97x |
-| HY-WorldPlay | BF16 | ✗ | 990.00 | 29700.00 | 1.00x |
-| HY-WorldPlay | INT2 | ✓ | 141.18 | 4235.45 | 7.01x |
-
-Across these runs, QuantVideoGen reduces total KV-cache memory by about 85%.
-
-<a id="citation"></a>
-
-## ✏️ Citation
-
-```bibtex
-@article{xi2026quant,
-  title={Quant VideoGen: Auto-Regressive Long Video Generation via 2-Bit KV-Cache Quantization},
-  author={Xi, Haocheng and Yang, Shuo and Zhao, Yilong and Li, Muyang and Cai, Han and Li, Xingyang and Lin, Yujun and Zhang, Zhuoyang and Zhang, Jintao and Li, Xiuyu and others},
-  journal={arXiv preprint arXiv:2602.02958},
-  year={2026}
-}
-```
-
+Most of the original model integrations, baseline KV-cache quantization framework, and environment setup come from upstream QVG. This README focuses on the additional mixed-bit design and implementation contributed in this group project.
